@@ -1,0 +1,1335 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Afficheur GPX — OpenStreetMap + Leaflet</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+html, body {height:100%; margin:0; font-family:Arial, sans-serif;}
+body {
+  overflow: hidden;
+}
+#map {position:fixed; top:0; left:0; width:100%; height:100%; z-index:0;}
+
+/* GPX Panel */
+.gpx-panel {position:absolute; top:0; left:0; width:300px; height:100%; display:flex;
+  flex-direction:column; gap:10px; padding:10px; z-index:1001; pointer-events: none;}
+.gpx-panel > * { pointer-events:auto; }
+.upload-btn {display:inline-block; background:#007bff; color:white; border-radius:4px;
+  padding:4px 6px; cursor:pointer; text-align:center; font-size:12px; width:140px;}
+#gpxInput { display:none; }
+#gpxList { display:flex; flex-direction:column; gap:5px; max-height:80%; overflow-y:auto;}
+.gpxItem {display:flex; align-items:flex-start; background:rgba(255,255,255,0.5); padding:4px 6px;
+  border-radius:6px; font-size:12px; flex-wrap:wrap;}
+.gpxItem input[type='color'] { width:18px; height:18px; padding:0; border:none; margin-left:5px; margin-top:2px; }
+.gpxItem button { margin-left:5px; margin-top:2px; }
+.gpxItem span { overflow-wrap:break-word; word-break:break-word; flex:1; margin-left:5px; }
+
+/* Side Panel (right) */
+.side-panel {
+  position: fixed;
+  right: -320px; top:50%; transform:translateY(-50%);
+  width:300px; height:40vh; z-index:1007;
+  background: rgba(255,255,255,0.95);
+  border-left:1px solid rgba(0,0,0,0.15);
+  border-radius:8px 0 0 8px; padding:10px;
+  box-shadow:-4px 6px 20px rgba(0,0,0,0.15);
+  transition:right 280ms ease;
+  display:flex; flex-direction:column; gap:10px; justify-content:flex-start; align-items:stretch;
+}
+.side-panel.open { right:0; }
+.side-panel .handle {
+  position:absolute; left:-14px; top:50%; transform:translateY(-50%);
+  width:14px; height:42px; background:#007bff;
+  border-radius:4px 0 0 4px;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.2); user-select:none; z-index:1008;
+}
+.side-panel .handle .bars { width:16px; height:12px; display:flex; flex-direction:column; justify-content:space-between; }
+.side-panel .handle .bars span { display:block; height:2px; background: rgba(255,255,255,0.95); border-radius:2px; }
+.side-panel h3 { margin:0; font-size:16px; text-align:left; }
+.param-row { display:flex; align-items:center; gap:8px; }
+.param-row label { min-width:120px; font-size:13px; }
+.param-row input[type="number"] { width:72px; padding:6px 8px; font-size:14px; border-radius:4px; border:1px solid #bbb; }
+
+/* KM Toggle */
+#kmToggle {
+  position: fixed; top:10px; right:120px; z-index:1006;
+  background:#007bff; color:white; border-radius:4px; padding:6px 10px;
+  cursor:pointer; text-align:center; font-size:13px; user-select:none;
+}
+#kmToggle.off { text-decoration: line-through; opacity:0.8; background:#444; color:#ddd; }
+
+/* small style for km labels */
+.km-circle { width:18px; height:18px; border-radius:50%; background:white;
+  border:1px solid; color:black; font-size:10px; font-weight:bold; text-align:center;
+  line-height:18px; pointer-events:none; box-sizing:border-box; }
+
+/* Basemaps */
+#basemaps { position:absolute; top:10px; right:10px; z-index:1002; display:flex; flex-direction:column; align-items:center; gap:4px; }
+#basemapBtn { width:50px; height:50px; border:1px solid black; border-radius:4px; cursor:pointer; object-fit:cover; }
+#basemapMenu { display:none; position:absolute; top:60px; right:0; background:white; border:1px solid #ccc; border-radius:6px; padding:5px; box-shadow:0 2px 6px rgba(0,0,0,0.3); flex-direction:column; }
+.menu-item { display:flex; flex-direction:row; align-items:center; padding:4px; border-radius:4px; cursor:pointer; gap:6px; }
+.menu-item img { width:50px; height:50px; object-fit:cover; border-radius:4px; }
+
+/* Zoom / footer / scale */
+#zoomControlContainer { position:absolute; bottom:100px; right:10px; z-index:1002; display:flex; flex-direction:column; align-items:center; gap:4px; }
+#zoomLevel { font-size:13px; font-weight:bold; color:black; background:rgba(255,255,255,0.8); padding:2px 4px; border-radius:4px; text-align:center; }
+#footer { position: fixed; bottom:10px; left:50%; transform:translateX(-50%); font-size:12px; color:black; font-weight:normal; text-shadow:2px 2px 4px grey; z-index:1006; }
+#logoRPA { position:fixed; bottom:10px; left:10px; width:70px; height:90px; z-index:1004; }
+#scaleContainer { position: fixed; bottom:30px; left:100px; z-index:999; pointer-events: none; display:flex; align-items:center; font-family:Arial, sans-serif; font-size:12px; }
+#customScale { width:120px; height:8px; display:flex; border-radius:4px; overflow:hidden; border:1px solid rgba(0,0,0,0.6); background: rgba(255,255,255,0.25); margin-right:8px; }
+#customScale div { flex:1; }
+#customScale .black { background: rgba(0,0,0,0.85); }
+#customScale .white { background: rgba(255,255,255,0.95); }
+#scaleValue { color:black; font-weight: normal; }
+
+/* Elevation Chart */
+#elevChart {
+  position: absolute;
+
+  /* place-le plus haut : ajuste cette valeur */
+  bottom: 120px;
+
+  /* largeur = plein écran - 50px de chaque côté */
+  left: 10px;
+  right: 10px;
+
+  height: 240px;
+  z-index: 400;
+  display: none;
+  background: rgba(255,255,255,0.8);
+  pointer-events: auto;
+}
+
+/* Help Panel */
+#helpPanel {
+  position: fixed;
+  top: 60px;
+  right: 250px;
+  width: 800px;
+  max-height: 60vh;
+  background: rgba(255,255,255,0.95);
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  z-index: 1011;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+}
+
+#helpPanel .help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #007bff;
+  color: white;
+  padding: 6px 10px;
+  font-weight: bold;
+}
+
+#helpPanel .help-header button {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+#helpPanel .help-content {
+  padding: 8px 12px;
+  overflow-y: auto;
+}
+
+#helpPanel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#helpPanel ul li {
+  margin-bottom: 16px;
+}
+
+#helpBtn {
+  position: fixed;
+  top: 13px;
+  right: 260px;         /* juste à gauche du bouton KM (qui est à 120px) */
+  z-index: 1010;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  color: #1e7e34;
+  border: 2px solid #1e7e34;
+  font-weight: 900;
+  text-shadow:
+    1px 0 #1e7e34,
+   -1px 0 #1e7e34,
+    0 1px #1e7e34,
+    0 -1px #1e7e34;
+  font-size: 16px;
+  text-align: center;
+  line-height: 32px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  user-select: none;
+}
+#helpBtn:hover {
+  background: #0056b3;
+}
+
+
+
+/* responsive tweaks */
+@media (max-width:600px){
+  .gpx-panel{ width:200px; }
+  #kmToggle{ right:90px; padding:5px 8px; }
+  .side-panel{ width:260px; right:-280px; }
+  .side-panel .handle{ left:-24px; }
+}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="gpx-panel" id="gpxPanel">
+  <label class="upload-btn" for="gpxInput">📁 Importer GPX</label>
+  <input type="file" id="gpxInput" multiple accept=".gpx"/>
+  <div id="gpxList"></div>
+</div>
+
+<!-- Help Panel -->
+<!-- Help Panel -->
+<div id="helpPanel">
+  <div class="help-header">
+    <span>Aide rapide</span>
+    <button id="helpClose">&times;</button>
+  </div>
+  <div class="help-content">
+    <ul>
+      <li>📁 <strong>Importer GPX</strong> — Ajouter des traces GPX à la carte.</li>
+      <li>☑️ <strong>Checkbox GPX</strong> — Afficher ou masquer la trace GPX.</li>
+      <li>
+  <span style="display:inline-block; width:16px; height:16px; background:#007bff; border:1px solid #333; margin-right:6px; vertical-align:middle;"></span>
+  🎨 <strong>Sélecteur de couleur</strong> — Changer la couleur de la trace GPX et du graphique.
+</li>
+
+
+      <li>📈 <strong>Afficher/masquer élévation</strong> — Afficher ou cacher le graphique d’altitude pour cette trace.</li>
+      <li>
+        <span style="display:inline-block; width:16px; height:16px; background:white; color:black; font-weight:bold; text-align:center; line-height:16px; border:1px solid black; margin-right:6px; vertical-align:middle;">-</span>
+        <strong>Supprimer GPX</strong> — Retirer la trace de la carte et de la liste.
+      </li>
+
+
+      <li>
+        <div style="
+          display:inline-block;
+          background:#007bff;
+          color:white;
+          border-radius:4px;
+          padding:6px 4px;
+          font-size:11px;
+          text-align:center;
+          user-select:none;
+          vertical-align:middle;
+          min-width:50px;
+          line-height:1.2em;
+        ">
+          KM<br><span style="font-size:10px;">Bornes Km affichées</span>
+        </div>
+        — Activer/désactiver l’affichage des bornes kilométriques. Intervalle entre bornes défini dans le panneau droit.
+      </li>
+
+
+      <li>
+  <div style="
+    display:inline-block;
+    width:32px;
+    height:32px;
+    border-radius:50%;
+    background:transparent;
+    color:#1e7e34;
+    border:2px solid #1e7e34;
+    font-weight:900;
+    text-align:center;
+    line-height:32px;
+    font-size:16px;
+    text-shadow:
+      1px 0 #1e7e34,
+     -1px 0 #1e7e34,
+      0 1px #1e7e34,
+      0 -1px #1e7e34;
+    vertical-align:middle;
+    margin-right:6px;
+  ">
+    ?
+  </div>
+  — Ouvre cette aide.
+</li>
+
+<li>
+<div style="
+display:inline-flex;
+width:14px;
+height:42px;
+background:#007bff;
+border-radius:4px 0 0 4px;
+align-items:center;
+justify-content:center;
+box-shadow:0 2px 6px rgba(0,0,0,0.2);
+vertical-align:middle;
+margin-right:6px;
+">
+<div style="width:16px; height:12px; display:flex; flex-direction:column; justify-content:space-between;">
+<span style="display:block; height:2px; background:rgba(255,255,255,0.95); border-radius:2px;"></span>
+<span style="display:block; height:2px; background:rgba(255,255,255,0.95); border-radius:2px;"></span>
+<span style="display:block; height:2px; background:rgba(255,255,255,0.95); border-radius:2px;"></span>
+</div>
+</div>
+— Ouvre le panneau droit
+</li>
+
+<li>
+<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+<img src="https://fabriziodelarusta.github.io/icons/OSM.png"
+   alt="OSM" style="width:50px; height:50px; object-fit:cover; border:1px solid #ccc; border-radius:4px;">
+<span>Cliquer pour changer de carte</span>
+</div>
+<div style="display:flex; flex-direction:column; gap:4px; margin-left:56px;">
+<div style="display:flex; align-items:center; gap:6px;">
+<img src="https://fabriziodelarusta.github.io/icons/velo_1.png"
+     alt="Carte avec pistes cyclcables de OpenCycleMap" style="width:50px; height:50px; object-fit:cover; border:1px solid #ccc; border-radius:4px;">
+<span>Carte avec pistes cyclcables de OpenCycleMap</span>
+</div>
+<div style="display:flex; align-items:center; gap:6px;">
+<img src="https://fabriziodelarusta.github.io/icons/sat.png"
+     alt="Carte satellite" style="width:50px; height:50px; object-fit:cover; border:1px solid #ccc; border-radius:4px;">
+<span>Carte satellite</span>
+</div>
+<div style="display:flex; align-items:center; gap:6px;">
+<img src="https://fabriziodelarusta.github.io/icons/Network.png"
+     alt="Carte avec moyens de transport" style="width:50px; height:50px; object-fit:cover; border:1px solid #ccc; border-radius:4px;">
+<span>Carte avec moyens de transport</span>
+</div>
+</div>
+</li>
+
+<li style="display:flex; align-items:center; gap:6px;">
+<span class="km-circle" style="border-color:#007bff;">15</span>
+<span>Cercle KM — Borne kilométrique le long de la trace.</span>
+</li>
+
+
+    </ul>
+  </div>
+</div>
+
+
+
+<div class="side-panel" id="sidePanel" aria-hidden="true">
+  <div class="handle" id="panelHandle" title="Paramètres — ouvrir/fermer">
+    <div class="bars" aria-hidden="true"><span></span><span></span><span></span></div>
+  </div>
+  <h3>Paramètres</h3>
+  <div style="font-size:12px;color:#333;">Affiche les bornes kilométriques le long des traces GPX.</div>
+  <div class="param-row" style="margin-top:8px;">
+    <label for="kmInterval">Intervalle bornes (km):</label>
+    <input type="number" id="kmInterval" min="5" max="95" step="5" value="15" />
+  </div>
+  <div style="font-size:12px;color:#666;">Entrez une valeur multiple de 5 (ex: 5,10,15,20...).</div>
+  <div style="margin-top:auto; font-size:12px; color:#444;">
+    <strong>Note:</strong> le bouton <em>KM</em> active/désactive l'affichage.
+  </div>
+</div>
+
+<div id="basemaps">
+  <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+    <img id="basemapBtn" src="https://FabriziodelaRusta.github.io/icons/OSM.png" alt="Choisir carte">
+    <div style="font-size:12px; color:black; background:rgba(255,255,255,0.5); padding:1px 4px; border-radius:4px; user-select:none;">Type de carte</div>
+  </div>
+  <div class="menu" id="basemapMenu">
+    <div class="menu-item" data-map="osm"><img src="https://fabriziodelarusta.github.io/icons/OSM.png"><div style="font-size:11px;">OSM</div></div>
+    <div class="menu-item" data-map="cycle"><img src="https://fabriziodelarusta.github.io/icons/velo_1.png"><div style="font-size:11px;">Cycle</div></div>
+    <div class="menu-item" data-map="esri"><img src="https://fabriziodelarusta.github.io/icons/sat.png"><div style="font-size:11px;">Satellite</div></div>
+    <div class="menu-item" data-map="transport"><img src="https://fabriziodelarusta.github.io/icons/Network.png"><div style="font-size:11px;">Transport</div></div>
+  </div>
+</div>
+
+<!-- <div id="zoomControlContainer"><div id="zoomLevel">Zoom: 8</div></div> -->
+<div id="helpBtn" title="Aide">?</div>
+
+
+<div id="footer">v<sub id="version">1.21</sub> — Fabrizio de la Rusta</div>
+<img id="logoRPA" src="https://fabriziodelarusta.github.io/icons/logo-RPA_bleu.png">
+
+<div id="scaleContainer"><div id="customScale"><div class="black"></div><div class="white"></div></div><div id="scaleValue">0 m</div></div>
+<div id="kmToggle" class="off" title="Afficher / Masquer bornes KM">KM</div>
+<canvas id="elevChart"></canvas>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-gpx@1.7.0/gpx.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<script>
+
+const helpBtn = document.getElementById('helpBtn');
+const helpPanel = document.getElementById('helpPanel');
+const helpClose = document.getElementById('helpClose');
+
+helpBtn.addEventListener('click', () => {
+  helpPanel.style.display = 'flex';
+});
+
+helpClose.addEventListener('click', () => {
+  helpPanel.style.display = 'none';
+});
+
+// Fermeture si clic en dehors
+document.addEventListener('click', (e) => {
+  if (!helpPanel.contains(e.target) && e.target !== helpBtn) {
+    helpPanel.style.display = 'none';
+  }
+});
+
+
+// Carte
+const map = L.map('map', {zoomControl:false}).setView([50.8503, 4.3517], 8);
+L.control.zoom({position:'bottomright'}).addTo(map);
+
+// document.getElementById('zoomLevel').textContent = "Zoom: " + map.getZoom();
+//map.on('zoomend', ()=>{ document.getElementById('zoomLevel').textContent = "Zoom: " + map.getZoom(); });
+
+// GPX panel wheel forwarding
+const panel = document.querySelector('.gpx-panel');
+panel.addEventListener('wheel', e => { map.scrollWheelZoom._onWheel(e); }, { passive: false });
+
+// Basemaps
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+let cycleLayer, esriLayer, transportLayer;
+const basemapBtn = document.getElementById('basemapBtn');
+const basemapMenu = document.getElementById('basemapMenu');
+
+basemapBtn.addEventListener('click', e=>{
+    basemapMenu.style.display = basemapMenu.style.display==='flex'?'none':'flex';
+    e.stopPropagation();
+});
+basemapMenu.addEventListener('click', e=> e.stopPropagation());
+document.addEventListener('click', ()=> basemapMenu.style.display='none');
+
+document.querySelectorAll(".menu-item").forEach(item=>{
+  item.addEventListener("click", ()=>{
+    const val = item.dataset.map;
+    const logo = document.getElementById('logoRPA');
+    if (val === 'esri') logo.src = "https://fabriziodelarusta.github.io/icons/logo-RPA_blanc.png";
+    else logo.src = "https://fabriziodelarusta.github.io/icons/logo-RPA_bleu.png";
+
+    map.eachLayer(l=>{ if([osm, cycleLayer, esriLayer, transportLayer].includes(l)) map.removeLayer(l); });
+    let layer;
+    if(val==='osm') layer=osm;
+    if(val==='cycle'){ if(!cycleLayer) cycleLayer=L.tileLayer("https://tile.thunderforest.com/cycle/{z}/{x}/{y}.png?apikey=a3cdc04d611c4ec591339bb435edb569"); layer=cycleLayer; }
+    if(val==='esri'){ if(!esriLayer) esriLayer=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"); layer=esriLayer; }
+    if(val==='transport'){ if(!transportLayer) transportLayer=L.tileLayer("https://tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey=a3cdc04d611c4ec591339bb435edb569"); layer=transportLayer; }
+    layer.addTo(map);
+    basemapBtn.src = item.querySelector("img").src;
+  });
+});
+
+// GPX import et gestion
+const gpxInput = document.getElementById('gpxInput');
+const gpxList = document.getElementById('gpxList');
+const gpxLayers = [];
+const gpxMeta = new Map();
+let gpxLoadingCount = 0;
+let gpxNeedsFit = false;
+
+const colors = [
+  // --- Tons normaux (7) ---
+  '#007bff', // bleu
+  '#ff0000', // rouge
+  '#00a800', // vert
+  '#ff00ff', // magenta
+  '#00ffff', // cyan
+  '#ffa500', // orange
+  '#800080', // violet
+
+  // --- Tons foncés (7) ---
+  '#0056b3', // bleu foncé
+  '#b30000', // rouge foncé
+  '#006400', // vert foncé
+  '#b300b3', // magenta foncé
+  '#009999', // cyan foncé
+  '#cc8400', // orange foncé
+  '#4b004b', // violet foncé
+
+  // --- Tons clairs (7) ---
+  '#66b2ff', // bleu clair
+  '#ff6666', // rouge clair
+  '#66cc66', // vert clair
+  '#ff66ff', // magenta clair
+  '#66ffff', // cyan clair
+  '#ffcc66', // orange clair
+  '#c080c0'  // violet clair
+];
+
+let colorIndex = 0;
+
+// 🔹 Fonction pour attribuer une couleur différente à chaque GPX
+//function getNextColor() {
+//  const usedColors = gpxLayers.map(l =>
+//    l.getLayers().find(sub => sub instanceof L.Polyline)?.options.color
+//  ).filter(c => !!c);
+//
+//  for (const c of colors) {
+//    if (!usedColors.includes(c)) return c;
+//  }//
+//
+//  // Si toutes les couleurs sont utilisées, recommencer proprement
+//  return colors[gpxLayers.length % colors.length];
+//}
+
+
+
+
+// KM toggle
+let showKm = true;
+const kmToggle = document.getElementById('kmToggle');
+const kmIntervalInput = document.getElementById('kmInterval');
+
+//const sidePanel = document.getElementById('sidePanel');
+//const panelHandle = document.getElementById('panelHandle');
+//panelHandle.addEventListener('click', ()=> setPanelOpen(!sidePanel.classList.contains('open')));
+//function setPanelOpen(open){ sidePanel.classList.toggle('open', open); sidePanel.setAttribute('aria-hidden', !open); }
+
+const sidePanel = document.getElementById('sidePanel');
+const panelHandle = document.getElementById('panelHandle');
+
+panelHandle.addEventListener('click', ()=> setPanelOpen(!sidePanel.classList.contains('open')));
+
+function setPanelOpen(open){
+  sidePanel.classList.toggle('open', open);
+  sidePanel.setAttribute('aria-hidden', !open);
+}
+
+/* --- AJOUT : fermeture au clic extérieur --- */
+document.addEventListener('click', (e) => {
+  if (!sidePanel.classList.contains('open')) return;
+  if (sidePanel.contains(e.target)) return;
+  if (panelHandle.contains(e.target)) return;
+  setPanelOpen(false);
+});
+
+
+function updateKmToggleUI(){
+  kmToggle.classList.toggle('off', !showKm);
+  kmToggle.innerHTML = 'KM<br><span style="font-size:11px;">Bornes Km affichées</span>';
+}
+kmToggle.addEventListener('click', ()=>{ showKm=!showKm; updateKmToggleUI(); refreshAllKmMarkers(); });
+updateKmToggleUI();
+
+kmIntervalInput.addEventListener('change', ()=>{
+  let v = Math.max(5, Math.min(95, Math.round((parseInt(kmIntervalInput.value)||20)/5)*5));
+  kmIntervalInput.value = v;
+  refreshAllKmMarkers();
+});
+
+// GPX import
+function loadGpxFile(file) {
+    if (!file.name.toLowerCase().endsWith('.gpx')) {
+        alert("Fichier non valide : " + file.name);
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+        const text = e.target.result;
+
+        // On affiche les 50 premières lignes pour debug
+        const lines = text.split(/\r?\n/).slice(0, 50);
+        console.log("===== 50 premières lignes du GPX =====");
+        lines.forEach((line, i) => console.log(`${i+1}: ${line}`));
+
+        // 🔹 supprimer ou ignorer les waypoints dans ce flux texte
+        const filteredText = text.replace(/<wpt[\s\S]*?<\/wpt>/gi, '');
+        console.log("Waypoints supprimés du texte GPX pour le parsing");
+
+        // Crée un Blob avec le GPX filtré
+        const blob = new Blob([filteredText], {type: 'application/gpx+xml'});
+        const url = URL.createObjectURL(blob);
+        const color = colors[colorIndex % colors.length];
+        colorIndex++;
+
+        const layer = new L.GPX(url, {
+            async: true,
+            marker_options: { startIconUrl:'', endIconUrl:'', shadowUrl:'', wptIconUrls:[] },
+            polyline_options: { weight:4, color:color, opacity:0.9 }
+        })
+        .on('loaded', e => {
+            URL.revokeObjectURL(url);
+
+            console.log("GPX chargé et parsé (waypoints ignorés) :", file.name);
+
+            layer.eachLayer(sub => {
+                if (sub instanceof L.Marker) {
+                    console.log("Marker détecté :", sub.getLatLng());
+                } else if (sub instanceof L.Polyline) {
+                    console.log("Polyline détectée avec", flattenLatLngs(sub.getLatLngs()).length, "points");
+                    flattenLatLngs(sub.getLatLngs()).slice(0, 50).forEach((pt, idx) => {
+                        console.log(`Point #${idx+1}: lat=${pt.lat}, lng=${pt.lng}, alt=${pt.alt || 0}`);
+                    });
+                }
+            });
+
+            addGpxToList(file.name, layer, color);
+            gpxLayers.push(layer);
+            gpxMeta.set(layer, { kmMarkers: [], showElevation: false });
+
+            if (showKm) createKmMarkersForLayer(layer);
+
+            // 🔹 CENTRAGE : tous les segments du GPX
+            // 🔹 CENTRAGE : tous les GPX existants
+            setTimeout(fitMapToAllGpx, 0);
+        })
+        .addTo(map);
+    };
+
+    reader.readAsText(file);
+    gpxInput.value = '';
+}
+
+// Fonction pour calculer le bounds complet d'un layer (tous segments)
+function getBoundsForLayer(layer) {
+    const bounds = L.latLngBounds([]);
+    function walk(l) {
+        if (l instanceof L.Polyline) bounds.extend(l.getBounds());
+        else if (l.eachLayer) l.eachLayer(walk);
+    }
+    walk(layer);
+    return bounds.isValid() ? bounds : null;
+}
+
+
+function getAllLatLngsFromLayer(layer) {
+  const all = [];
+
+  function walk(l) {
+    if (l instanceof L.Polyline) {
+      const pts = flattenLatLngs(l.getLatLngs());
+
+      pts.forEach(pt => {
+        pt.alt = pt.alt ?? pt.ele ?? pt.meta?.ele ?? 0;
+        all.push(pt);
+      });
+
+    } else if (l.eachLayer) {
+      l.eachLayer(child => walk(child));
+    }
+  }
+  walk(layer);
+
+  console.log("KM ▶ polylines trouvées:", all.length);
+  return all;
+}
+
+
+function fitMapToAllGpx() {
+    if (gpxLayers.length === 0) return;
+
+    let bounds = L.latLngBounds([]);
+
+    gpxLayers.forEach(layer => {
+        layer.getLayers().forEach(sub => {
+            if (sub instanceof L.Polyline) {
+                bounds.extend(sub.getBounds());
+            }
+        });
+    });
+
+    if (bounds.isValid()) {
+        map.fitBounds(bounds.pad(0.05), { animate: true });
+    }
+}
+
+
+
+// Pour tout import GPX
+gpxInput.addEventListener('change', () => {
+    Array.from(gpxInput.files).forEach(file => loadGpxFile(file));
+});
+
+
+// Fonction pour ajouter GPX dans la liste avec boutons couleur, elevation, supprimer
+function addGpxToList(name, layer, color){
+  const div = document.createElement('div'); div.className='gpxItem';
+  const checkbox = document.createElement('input'); checkbox.type='checkbox'; checkbox.checked=true; checkbox.layerRef=layer;
+
+  checkbox.addEventListener('change', ()=>{
+      layer.eachLayer(l=>{
+          if(l instanceof L.Polyline) checkbox.checked ? l.addTo(map) : map.removeLayer(l);
+      });
+      const meta = gpxMeta.get(layer);
+      if(meta && meta.kmMarkers) meta.kmMarkers.forEach(m=> checkbox.checked ? m.addTo(map) : map.removeLayer(m));
+      refreshAllKmMarkers();
+  });
+
+  const elevBtn = document.createElement('button'); elevBtn.textContent='📈'; elevBtn.title='Afficher/masquer élévation';
+  elevBtn.style.marginLeft='4px'; elevBtn.style.fontSize='14px'; elevBtn.style.width='24px';
+  elevBtn.addEventListener('click', ()=>{
+    const meta = gpxMeta.get(layer);
+    if(!meta) return;
+    // Désactiver l'élevation sur tous les autres GPX
+    gpxLayers.forEach(l=>{ if(l!==layer) gpxMeta.get(l).showElevation=false; });
+    meta.showElevation = !meta.showElevation;
+    refreshElevationCharts();
+  });
+
+  const colorPicker = document.createElement('input');
+  colorPicker.type = 'color';
+  colorPicker.value = color;
+
+  colorPicker.addEventListener('input', () => {
+      const newColor = colorPicker.value;
+
+      // 1️⃣ Mettre à jour le style du polyline sur la carte
+      layer.eachLayer(l => { if(l instanceof L.Polyline) l.setStyle({color:newColor}); });
+
+      // Mettre à jour la couleur de la chart si active
+      if(elevChart){
+          elevChart.data.datasets.forEach(ds=>{
+              if(ds._layerRef===layer){
+                  ds.borderColor=newColor;
+                  ds._layerColor=newColor;
+              }
+          });
+          elevChart.update();
+      }
+
+
+
+      // 3️⃣ Redessiner la chart pour appliquer la nouvelle couleur de légende
+      if(elevChart) elevChart.update();
+  });
+
+  const removeBtn = document.createElement('button'); removeBtn.textContent='-';
+
+  // 🔹 Fonction récursive pour supprimer tous les segments
+  function removeLayerRecursively(l) {
+      if (l instanceof L.Polyline) map.removeLayer(l);
+      else if (l.eachLayer) l.eachLayer(sub => removeLayerRecursively(sub));
+  }
+
+  removeBtn.addEventListener('click', ()=>{
+      removeLayerRecursively(layer);  // supprime tous les segments du GPX
+
+      const meta = gpxMeta.get(layer);
+      if(meta && meta.kmMarkers) meta.kmMarkers.forEach(m=> map.removeLayer(m));
+
+      gpxList.removeChild(div);
+      const idx = gpxLayers.indexOf(layer); if(idx>-1) gpxLayers.splice(idx,1);
+      gpxMeta.delete(layer);
+      refreshElevationCharts();
+
+      // recentre la carte après suppression
+      setTimeout(fitMapToAllGpx, 0);
+  });
+
+  const label = document.createElement('span'); label.textContent=name;
+  div.appendChild(checkbox); div.appendChild(label); div.appendChild(colorPicker); div.appendChild(elevBtn); div.appendChild(removeBtn);
+  gpxList.appendChild(div);
+}
+
+// --- KM markers logic ---
+function clearAllKmMarkers(){ for(const [layer,meta] of gpxMeta.entries()){ if(meta && meta.kmMarkers){ meta.kmMarkers.forEach(m=> map.removeLayer(m)); meta.kmMarkers=[]; } } }
+function refreshAllKmMarkers(){
+    clearAllKmMarkers();
+    if(!showKm) return;
+
+    for(const layer of gpxLayers){
+        // Trouver la checkbox associée
+        const itemDiv = Array.from(gpxList.children)
+            .find(div => {
+                const chk = div.querySelector('input[type="checkbox"]');
+                return chk && chk.layerRef === layer;
+            });
+        const checkbox = itemDiv ? itemDiv.querySelector('input[type="checkbox"]') : null;
+
+        // Si la checkbox existe et est cochée, créer les km markers
+        if(checkbox && checkbox.checked){
+            createKmMarkersForLayer(layer);
+        }
+    }
+}
+
+const GPS_GAP_METERS = 200;
+
+function createKmMarkersForLayer(layer) {
+    const meta = gpxMeta.get(layer) || { kmMarkers: [] };
+    meta.kmMarkers.forEach(m => map.removeLayer(m));
+    meta.kmMarkers = [];
+
+    const kmInterval = (parseInt(kmIntervalInput.value) || 1) * 1000; // km en mètres
+    let cumDistance = 0; // distance cumulée totale du layer
+    let nextKmMark = kmInterval; // prochain km à placer
+
+    function processLayer(l) {
+        if (l.getLatLngs) {
+            const points = flattenLatLngs(l.getLatLngs()).map(pt => L.latLng(pt));
+            for (let i = 1; i < points.length; i++) {
+                const p0 = points[i - 1];
+                const p1 = points[i];
+                const segDist = p0.distanceTo(p1);
+
+                if (!isFinite(segDist)) continue;
+
+                // placer tous les markers nécessaires sur ce segment
+                while (cumDistance + segDist >= nextKmMark) {
+                    const ratio = (nextKmMark - cumDistance) / segDist;
+                    const lat = p0.lat + (p1.lat - p0.lat) * ratio;
+                    const lng = p0.lng + (p1.lng - p0.lng) * ratio;
+
+                    const html = `<div class="km-circle">${Math.round(nextKmMark / 1000)}</div>`;
+                    const marker = L.marker([lat, lng], {
+                        icon: L.divIcon({ className:'', html, iconSize:null, iconAnchor:[9,9] })
+                    }).addTo(map);
+
+                    meta.kmMarkers.push(marker);
+                    nextKmMark += kmInterval;
+                }
+
+                cumDistance += segDist; // ajouter toute la distance du segment
+            }
+        } else if (l.eachLayer) {
+            l.eachLayer(processLayer);
+        }
+    }
+
+    processLayer(layer);
+
+    // placer un marker final exactement au dernier point
+    const lastPoint = (function getLastPoint(l) {
+        if (l.getLatLngs) {
+            const pts = flattenLatLngs(l.getLatLngs()).map(pt => L.latLng(pt));
+            return pts[pts.length - 1];
+        } else if (l.eachLayer) {
+            let p;
+            l.eachLayer(sub => { p = getLastPoint(sub) || p; });
+            return p;
+        }
+    })(layer);
+
+    if (lastPoint) {
+        const kmLabel = Math.round(cumDistance / 1000);
+        const html = `<div class="km-circle">${kmLabel}</div>`;
+        const marker = L.marker([lastPoint.lat, lastPoint.lng], {
+            icon: L.divIcon({ className:'', html, iconSize:null, iconAnchor:[9,9] })
+        }).addTo(map);
+        meta.kmMarkers.push(marker);
+    }
+
+    gpxMeta.set(layer, meta);
+}
+
+
+function flattenLatLngs(arr){ const out=[]; (function rec(a){ if(!a) return; if(Array.isArray(a)) a.forEach(e=>rec(e)); else if(a && typeof a.lat==='number' && typeof a.lng==='number') out.push(a); })(arr); return out; }
+function getLatLngsWithAltitude(polyline) {
+    const latlngs = flattenLatLngs(polyline.getLatLngs());
+    return latlngs.map(ll => ({
+        lat: ll.lat,
+        lng: ll.lng,
+        alt: ll.alt !== undefined ? ll.alt : (ll.ele !== undefined ? ll.ele : 0)
+    }));
+}
+
+// --- Elevation Charts ---
+// --- Elevation Charts ---
+let elevChart = null;
+
+// Hover marker sur la carte
+let hoverMarker = L.circleMarker([0,0], {
+    radius: 6,
+    color: 'red',
+    fillColor: 'red',
+    fillOpacity: 0.8,
+    interactive: false
+});
+// Ajout du marker sur la carte
+let hoverMarkerAdded = false;
+
+function updateHoverMarker(latlng){
+  if(!hoverMarkerAdded){
+    hoverMarker.addTo(map);
+    hoverMarkerAdded = true;
+  }
+  hoverMarker.setLatLng(latlng);
+}
+
+// Plugin Chart.js : dessine un point sur le profil
+const hoverPointPlugin = {
+    id: 'hoverPointPlugin',
+    afterDatasetsDraw(chart, args, options) {
+        const ctx = chart.ctx;
+        const dataset = chart.getDatasetMeta(0);
+        if (!dataset || !dataset.data) return;
+
+        const active = chart.getActiveElements();
+        if (active.length === 0) return;
+
+        const point = active[0];
+        const x = point.element.x;
+        const y = point.element.y;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = 'red';
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    }
+};
+
+// Renvoie le point lat/lng au point de distance (en mètres) sur la trace
+function findLatLngAtDistance(latlngs, targetDist) {
+  let cum = 0;
+  for (let i = 1; i < latlngs.length; i++) {
+    const p0 = latlngs[i - 1];
+    const p1 = latlngs[i];
+    const seg = p0.distanceTo(p1);
+    if (cum + seg >= targetDist) {
+      const ratio = (targetDist - cum) / seg;
+      return L.latLng(
+        p0.lat + (p1.lat - p0.lat) * ratio,
+        p0.lng + (p1.lng - p0.lng) * ratio
+      );
+    }
+    cum += seg;
+  }
+  return latlngs[latlngs.length - 1];
+}
+
+function resampleAndSmoothProfile(latlngs, stepMeters = 10) {
+    // 1️⃣ Rééchantillonnage par distance
+    let sampled = [];
+    let cum = 0;
+    let next = 0;
+
+    for (let i = 1; i < latlngs.length; i++) {
+        const p0 = latlngs[i - 1];
+        const p1 = latlngs[i];
+        const seg = p0.distanceTo(p1);
+
+        while (cum + seg >= next) {
+            const r = (next - cum) / seg;
+            sampled.push({
+                lat: p0.lat + (p1.lat - p0.lat) * r,
+                lng: p0.lng + (p1.lng - p0.lng) * r,
+                alt: p0.alt + (p1.alt - p0.alt) * r,
+                dist: next
+            });
+            next += stepMeters;
+        }
+        cum += seg;
+    }
+
+    // 2️⃣ Lissage Savitzky-Golay (fenêtre 5 points, polynôme ordre 2)
+    const sg = [];
+    const n = sampled.length;
+    for (let i = 0; i < n; i++) {
+        if (i < 3 || i > n - 4) {
+            sg.push({ ...sampled[i] }); // bord → pas de lissage
+            continue;
+        }
+        // coefficients SG pour fenêtre 5
+        const alt = (-3*sampled[i-2].alt + 12*sampled[i-1].alt + 17*sampled[i].alt + 12*sampled[i+1].alt - 3*sampled[i+2].alt)/35;
+        sg.push({ ...sampled[i], alt });
+    }
+
+    return sg;
+}
+
+// Plugin pour colorer la courbe selon la pente
+const slopeColorPlugin = {
+  id: 'slopeColor',
+  beforeDatasetsDraw(chart) {
+    const ctx = chart.ctx;
+    const dataset = chart.data.datasets[0];
+    if (!dataset || !dataset.data) return;
+
+    ctx.save();
+    ctx.lineWidth = dataset.borderWidth || 1.6;
+
+    for (let i = 1; i < dataset.data.length; i++) {
+      const p0 = dataset.data[i - 1];
+      const p1 = dataset.data[i];
+
+      const x0 = chart.scales.x.getPixelForValue(p0.x);
+      const y0 = chart.scales.y.getPixelForValue(p0.y);
+      const x1 = chart.scales.x.getPixelForValue(p1.x);
+      const y1 = chart.scales.y.getPixelForValue(p1.y);
+
+      const window = 2; // 2 points avant + 2 après ≈ 100 m
+      const i0 = Math.max(0, i - window);
+      const i1 = Math.min(dataset.data.length - 1, i + window);
+
+      const pStart = dataset.data[i0];
+      const pEnd   = dataset.data[i1];
+
+      const dxMeters = Math.max((pEnd.x - pStart.x) * 1000, 1);
+      const dyMeters = pEnd.y - pStart.y;
+
+      const slopePct = (dyMeters / dxMeters) * 100;
+
+
+      const absSlope = Math.abs(slopePct);
+      let color;
+
+      // OpenRunner-like
+      if (absSlope < 2) {
+        color = '#2ecc71';      // vert clair
+      } else if (absSlope < 4) {
+        color = '#3498db';      // bleu clair
+      } else if (absSlope < 6) {
+        color = '#f1c40f';      // jaune / orange clair
+      } else if (absSlope < 8) {
+        color = '#e67e22';      // orange foncé
+      } else if (absSlope < 10) {
+        color = '#d35400';      // orange très foncé
+      } else {
+        color = '#c0392b';      // rouge (>= 10%)
+      }
+
+
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+};
+
+function refreshElevationCharts() {
+    const activeLayers = gpxLayers.filter(l => {
+        const meta = gpxMeta.get(l);
+        return meta && meta.showElevation;
+    });
+
+    // Un seul GPX actif
+    if (activeLayers.length > 1) {
+        const prev = activeLayers[0];
+        activeLayers.splice(1);
+        gpxMeta.forEach((meta, layer) => {
+            if (layer !== prev) meta.showElevation = false;
+        });
+    }
+
+    const chartEl = document.getElementById('elevChart');
+    if (activeLayers.length === 0) {
+        if (elevChart) {
+            elevChart.destroy();
+            elevChart = null;
+        }
+
+        chartEl.style.display = 'none';
+        chartEl.width = 0;
+        chartEl.height = 0;
+
+        return;
+    }
+
+    chartEl.style.display = 'block';
+
+  // Fixe la taille réelle du canvas pour Chart.js
+  resizeChartCanvas(chartEl);
+console.log("📏 refreshElevationCharts() - canvas taille réelle:", chartEl.width, chartEl.height);
+  // 🔴 NETTOYAGE OBLIGATOIRE DU CANVAS
+  const ctx = chartEl.getContext('2d');
+  ctx.clearRect(0, 0, chartEl.width, chartEl.height);
+
+
+    const layer = activeLayers[0];
+    let latlngs = getAllLatLngsFromLayer(layer);
+    if (latlngs.length < 2) return;
+
+    // Réassigner les altitudes correctement
+    latlngs.forEach(pt => {
+        if (pt.meta && pt.meta.ele !== undefined) {
+            pt.alt = parseFloat(pt.meta.ele);
+        } else if (pt.ele !== undefined) {
+            pt.alt = parseFloat(pt.ele);
+        } else {
+            pt.alt = 0;
+        }
+    });
+
+    // Calcul distances et altitudes
+    const profile = resampleAndSmoothProfile(latlngs, 25);
+
+    const distances = profile.map(p => p.dist);
+    const altitudes = profile.map(p => p.alt);
+
+
+
+  //  colors.unshift(colors[0]);
+
+    const dataPoints = distances.map((d, i) => ({
+        x: +(d / 1000).toFixed(2),
+        y: altitudes[i],
+        distMeters: d
+    }));
+
+
+
+    const dataset = {
+      label: layer.get_name?.() || 'GPX Track',
+      data: profile.map(p => ({ x: +(p.dist/1000).toFixed(2), y: p.alt })),
+      borderColor: 'rgba(0,0,0,0)',
+      borderWidth: 1.6,
+      backgroundColor: 'rgba(0,0,0,0)',
+      fill: false,
+      tension: 0.6,
+      pointRadius: 0,
+      _layerColor: layer.getLayers().find(l => l instanceof L.Polyline)?.options.color || '#007bff',
+      _layerRef: layer   // 🔹 lien vers la trace GPX
+
+    };
+
+
+
+
+
+    if (elevChart) {
+        elevChart.destroy();
+        elevChart = null;
+    }
+
+      elevChart = new Chart(chartEl, {
+        type: 'line',
+        data: { datasets: [dataset] },
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+
+          interaction: {
+            mode: 'nearest',
+            intersect: false
+          },
+
+          onHover: (event, activeElements) => {
+            if (activeElements.length > 0) {
+              const idx = activeElements[0].index;
+              const distM = distances[idx];
+              const latlng = findLatLngAtDistance(latlngs, distM);
+              updateHoverMarker(latlng);
+            }
+          },
+
+          scales: {
+            x: { type: 'linear', title: { display: true, text: 'Distance (km)' }, ticks: { stepSize: 1 } },
+            y: { title: { display: true, text: 'Altitude (m)' } }
+          },
+
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                generateLabels: (chart) => {
+                  const dataset = chart.data.datasets[0];
+                  const layer = dataset._layerRef;
+
+                  // Calcul total Km et D+ si le dataset a un layer
+                  let kmText = '', dPlusText = '';
+                  if (layer) {
+      //              const poly = layer.getLayers().find(l => l instanceof L.Polyline);
+                      layer.eachLayer(l=>{
+                        if(l instanceof L.Polyline) poly = l;
+                      });
+                    if (poly) {
+                      const latlngs = flattenLatLngs(poly.getLatLngs());
+                      let totalDist = 0, totalDplus = 0;
+                      for (let j = 1; j < latlngs.length; j++) {
+                        const p0 = latlngs[j - 1], p1 = latlngs[j];
+                        const seg = p0.distanceTo(p1);
+                        const dy = (p1.alt || 0) - (p0.alt || 0);
+                        totalDist += seg;
+                        if (dy > 0) totalDplus += dy;
+                      }
+                      kmText = `${(totalDist / 1000).toFixed(1)} Km`;
+                      dPlusText = `${Math.round(totalDplus).toLocaleString()} D+`;
+                    }
+                  }
+
+                  return [
+                    // 🔹 Nom de la trace (rectangle GPX)
+                    {
+                      text: dataset.label,
+                      fillStyle: dataset._layerColor || '#000000',
+                      strokeStyle: dataset._layerColor || '#000000',
+                      lineWidth: 2
+                    },
+
+                    // 🔹 Séparateur visuel
+                    {
+                      text: 'Pente (%)',
+                      fillStyle: 'rgba(0,0,0,0)',
+                      strokeStyle: 'rgba(0,0,0,0)',
+                      lineWidth: 0
+                    },
+
+                    // 🔹 Classes de pente (OpenRunner-like)
+                    { text: '< 2 %',   fillStyle: '#2ecc71' },
+                    { text: '2 – 4 %', fillStyle: '#3498db' },
+                    { text: '4 – 6 %', fillStyle: '#f1c40f' },
+                    { text: '6 – 8 %', fillStyle: '#e67e22' },
+                    { text: '8 – 10 %', fillStyle: '#d35400' },
+                    { text: '> 10 %',  fillStyle: '#c0392b' },
+
+                    // 🔹 Totaux Km et D+ derrière la section pente
+                    {
+                      text: `${kmText}    —    ${dPlusText}`,
+                      fillStyle: 'rgba(0,0,0,0)',
+                      strokeStyle: 'rgba(0,0,0,0)',
+                      lineWidth: 0
+                    }
+                  ];
+                }
+
+              },
+
+
+            },
+
+
+      tooltip: {
+          enabled: true,
+          displayColors: false,
+          callbacks: {
+              title: () => '', // supprime le titre
+
+    label: function(context) {
+      const idx = context.dataIndex;
+
+      const km = context.parsed.x.toFixed(2);
+      const ele = context.parsed.y.toFixed(0);
+
+      let slopeTxt = '—';
+      if (idx > 0) {
+        const p0 = context.dataset.data[idx - 1];
+        const p1 = context.dataset.data[idx];
+
+        const dx = (p1.x - p0.x) * 1000; // km → m
+        if (dx > 0) {
+          const dy = p1.y - p0.y;
+          const slope = (dy / dx) * 100;
+          slopeTxt = slope.toFixed(1) + ' %';
+        }
+      }
+
+      return [
+        `Km : ${km}`,
+        `Altitude : ${ele} m`,
+        `Pente : ${slopeTxt}`
+      ];
+    },
+
+    beforeLabel: () => ''     // supprime tout texte avant le label (sécurité)
+  }
+}
+
+          }
+        },
+        plugins: [hoverPointPlugin, slopeColorPlugin]
+
+      });
+    }
+
+
+function resizeChartCanvas(canvas) {
+    // Largeur = largeur de l'écran moins 100px (50px de chaque côté)
+    const width = window.innerWidth - 20;
+    const height = 240; // hauteur fixe en px
+    canvas.width = width;
+    canvas.height = height;
+
+    // Ajuster le style pour correspondre à la taille du canvas
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+
+    console.log("Canvas réel après resize :", canvas.width, "x", canvas.height);
+}
+
+
+
+
+// --- Scale ---
+function updateScale(){
+  const scaleValue=document.getElementById("scaleValue");
+  const scaleDiv=document.getElementById("customScale");
+  const baseWidthPx=scaleDiv.clientWidth||120;
+  const p1=map.containerPointToLatLng([0,0]);
+  const p2=map.containerPointToLatLng([baseWidthPx,0]);
+  const metersForBaseWidth=p1.distanceTo(p2);
+  const niceValues=[1,2,5];
+  const pow=Math.pow(10,Math.floor(Math.log10(metersForBaseWidth)));
+  let best = niceValues.map(v=>v*pow).reduce((a,b)=> Math.abs(metersForBaseWidth-a)<Math.abs(metersForBaseWidth-b)?a:b);
+  const candidates=[]; for(let pExp=Math.floor(Math.log10(metersForBaseWidth))-1;pExp<=Math.floor(Math.log10(metersForBaseWidth))+1;pExp++){ const base=Math.pow(10,pExp); niceValues.forEach(v=>candidates.push(v*base)); }
+  const metersPerPixel=metersForBaseWidth/baseWidthPx;
+  let chosen=candidates.map(c=>({c,px:Math.round(c/metersPerPixel)})).filter(o=>o.px>=60&&o.px<=260);
+  if(chosen.length===0) chosen=candidates.map(c=>({c,px:Math.round(c/metersPerPixel)})).sort((a,b)=>Math.abs(a.px-120)-Math.abs(b.px-120));
+  const final=chosen[0]||{c:best,px:Math.round(best/metersPerPixel)};
+  scaleDiv.style.width=final.px+"px"; scaleValue.textContent=final.c>=1000?Math.round(final.c/1000)+" km":Math.round(final.c)+" m";
+}
+
+map.on("zoomend", ()=>{ updateScale(); refreshAllKmMarkers(); refreshElevationCharts(); });
+map.on("moveend", ()=>{ updateScale(); });
+setTimeout(updateScale,400); window.addEventListener('resize',updateScale);
+window.addEventListener('resize', () => {
+    const chartEl = document.getElementById('elevChart');
+    if (chartEl && elevChart) {
+        resizeChartCanvas(chartEl);
+        elevChart.update(); // force le redessin complet
+    }
+});
+
+window.addEventListener('resize', () => {
+    const chartEl = document.getElementById('elevChart');
+    if (!chartEl || chartEl.style.display === 'none') return;
+
+    const rect = chartEl.getBoundingClientRect();
+    console.log("📏 Canvas rect:", rect.width, "x", rect.height);
+
+    chartEl.width = rect.width;
+    chartEl.height = rect.height;
+
+    if (elevChart) {
+        elevChart.resize();  // Redimensionne les axes
+        console.log("📊 Chart.js chart.resize() appelé");
+        console.log("   Chart width/height interne:", elevChart.width, elevChart.height);
+        elevChart.update();  // Force le redraw de la courbe
+    }
+});
+
+// --- Smart forwarding wheel/mousedown from panel ---
+function isOverInteractiveElement(evt){
+  const sel='input, textarea, button, select, label.upload-btn, .gpxItem, #gpxList, .menu-item, #basemapBtn, #basemapMenu';
+  const path=(evt.composedPath && evt.composedPath())||(evt.path)|| (function(){ const p=[]; let el=evt.target; while(el){ p.push(el); el=el.parentElement; } return p; })();
+  for(const el of path){ if(!el||el.nodeType!==1) continue; try{ if(el.matches && el.matches(sel)) return true; }catch(e){} } return false;
+}
+
+const gpxPanel=document.getElementById('gpxPanel');
+gpxPanel.addEventListener('wheel', e=>{ if(isOverInteractiveElement(e)) return; e.preventDefault(); if(map&&map.scrollWheelZoom&&typeof map.scrollWheelZoom._onWheel==='function') map.scrollWheelZoom._onWheel.call(map.scrollWheelZoom,e); },{passive:false});
+gpxPanel.addEventListener('mousedown', e=>{ if(isOverInteractiveElement(e)) return; if(map&&map.dragging&&map.dragging._draggable&&typeof map.dragging._draggable._onDown==='function') map.dragging._draggable._onDown.call(map.dragging._draggable,e); },{passive:false});
+</script>
+</body>
+</html>
