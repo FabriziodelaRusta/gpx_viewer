@@ -870,6 +870,13 @@ function updateHoverMarker(latlng){
   hoverMarker.setLatLng(latlng);
 }
 
+function hideHoverMarker(){
+  if(hoverMarkerAdded){
+    map.removeLayer(hoverMarker);
+    hoverMarkerAdded = false;
+  }
+}
+  
 // Plugin Chart.js : dessine un point sur le profil
 const hoverPointPlugin = {
     id: 'hoverPointPlugin',
@@ -1132,6 +1139,8 @@ console.log("📏 refreshElevationCharts() - canvas taille réelle:", chartEl.wi
               const distM = distances[idx];
               const latlng = findLatLngAtDistance(latlngs, distM);
               updateHoverMarker(latlng);
+            } else {
+              hideHoverMarker();
             }
           },
 
@@ -1252,6 +1261,9 @@ console.log("📏 refreshElevationCharts() - canvas taille réelle:", chartEl.wi
         plugins: [hoverPointPlugin, slopeColorPlugin]
 
       });
+        chartEl.addEventListener('mouseleave', () => {
+  hideHoverMarker();
+});
     }
 
 
